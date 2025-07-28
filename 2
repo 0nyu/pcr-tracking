@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Well Plate Tracker</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+        }
+
+        .grid {
+            margin: 20px auto;
+            display: grid;
+            gap: 5px;
+        }
+
+        .well-button {
+            padding: 10px;
+            cursor: pointer;
+            margin: 5px;
+        }
+
+        .cell {
+            width: 40px;
+            height: 40px;
+            border: 1px solid #999;
+            background-color: #eee;
+            color: red;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .off {
+            background-color: #ccc;
+            color: red;
+        }
+
+        .pending {
+            background-color: #aee;
+            color: black;
+        }
+
+        .on {
+            background-color: #4CAF50;
+            color: white;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Well Plate Tracker</h1>
+
+    <div class="well-options">
+        <button class="well-button" onclick="selectWell('96')">96 Well Plate</button>
+        <button class="well-button" onclick="selectWell('48')">48 Well Plate</button>
+    </div>
+
+    <div id="well-container"></div>
+
+    <div id="controls" class="hidden">
+        <button onclick="startWell()" id="startBtn">Start</button>
+        <button onclick="endWell()" class="hidden" id="endBtn">End</button>
+        <button onclick="resetWell()">초기화</button>
+    </div>
+
+    <script>
+        const savedStates = {};
+        let currentWell = '';
+        let gridData = {};
+        const wellSizes = {
+            '96': { rows: 8, cols: 12 },
+            '48': { rows: 6, cols: 8 }
+        };
+
+        function selectWell(type) {
+            currentWell = type;
+            document.getElementById('controls').classList.remove('hidden');
+            document.getElementById('endBtn').classList.add('hidden');
+            document.getElementById('startBtn').classList.remove('hidden');
+            createGrid(type);
+            if (savedStates[type]) {
+                gridData = JSON.parse(JSON.stringify(savedStates[type]));
+                renderGrid();
+            }
+        }
+
+        function createGrid(type) {
+            const container = document.getElementById('well-container');
+            container.innerHTML = '';
+            const { rows, cols } = wellSizes[type];
+            gridData = {};
+            for (let r = 0; r < rows; r++) {
+                const rowLabel = String.fromCharCode(65 + r);
+                for (let c = 1; c <= cols; c++) {
+                    const id = rowLabel + c;
+                    gridData[id] = 'off';
+                }
+            }
+            renderGrid();
+        }
+
+        let isDragging = false;
+        let touchedCells = new Set();
+
+        function renderGrid() {
+            const container = document.getElementById('well-container');
+            const { cols } = wellSizes[currentWell];
+            container.style.gridTemplateColumns = `repeat(${cols}, 40px)`;
+            container.className = 'grid';
+            container.innerHTML = '';
+
+            Object.entries(gridData).forEach(([id, status]) => {
+                const cell = document.createElement('div');
+                cell.className = 'cell';
+                if (status === 'on') {
+                    cell.classList.add('on');
+                    cell.textContent = id;
+                } else if (status === 'pending') {
+                    cell.classList.add('pending');
+                    cell.textContent = id;
+                } else {
+                    cell.classList.add('off');
+                    cell.textContent = '❌';
+                }
+                cell.dataset.id = id;
+
+                // PC 마우스 드래그
+                cell.addEventListener('mousedown', () => {
+                    isDragging = true;
+                    toggleCell(id);
+                });
+
+                cell.addEventListener('mouseover', () => {
+                    if (isDragging) toggleCell(id);
+                });
+
+                // 모바일 터치 드래그
+                cell.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    isDragging = true;
+                    touchedCells.clear();
+                    toggleCell(id);
+                    touchedCells.add(id);
+                });
+
+                cell.addEventListener('touchmove', (e) => {
+                    e.preventDefault();
+                    const touch = e.touches[0];
+                    const target = document.elementFromPoint(touch.clientX, touch.clientY);
+                    if (target && target.classList.contains('cell')) {
+                        const touchedId = target.dataset.id;
+                        if (touchedId && !touchedCells.has(touchedId)) {
+                            toggleCell(touchedId);
+                            touchedCells.add(touchedId);
+                        }
+                    }
+                });
+
+                cell.addEventListener('touchend', () => {
+                    isDragging = false;
+                    touchedCells.clear();
+                });
+
+                document.addEventListener('mouseup', () => {
+                    isDragging = false;
+                });
+
+                container.appendChild(cell);
+            });
+        }
+
+        function toggleCell(id) {
+            if (gridData[id] === 'on') return; // 이미 on이면 무시
+            gridData[id] = (gridData[id] === 'pending') ? 'off' : 'pending';
+            renderGrid();
+        }
+
+        function startWell() {
+            for (let key in gridData) {
+                if (gridData[key] === 'pending') {
+                    gridData[key] = 'on';
+                }
+            }
+            renderGrid();
+            document.getElementById('startBtn').classList.add('hidden');
+            document.getElementById('endBtn').classList.remove('hidden');
+            startSpeechRecognition();
+        }
+
+        function endWell() {
+            savedStates[currentWell] = JSON.parse(JSON.stringify(gridData));
+            alert("상태 저장 완료!");
+        }
+
+        function resetWell() {
+            if (confirm("정말 초기화할까요? 저장된 데이터가 삭제됩니다.")) {
+                delete savedStates[currentWell];
+                createGrid(currentWell);
+                alert("초기화 완료!");
+            }
+        }
+
+        // === 음성인식 ===
+        function startSpeechRecognition() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                alert("이 브라우저는 음성 인식을 지원하지 않습니다.");
+                return;
+            }
+
+            const recognition = new SpeechRecognition();
+            recognition.lang = 'ko-KR';
+            recognition.continuous = true;
+            recognition.interimResults = false;
+
+            recognition.onresult = (event) => {
+                const transcript = event.results[event.results.length - 1][0].transcript.trim().toUpperCase();
+                const cleaned = transcript.replace(/\s+/g, '').replace(/[^A-Z0-9]/g, '');
+                if (gridData[cleaned] === 'on') {
+                    gridData[cleaned] = 'off';
+                    renderGrid();
+                } else {
+                    console.log("잘못된 입력 또는 아직 on이 아님:", cleaned);
+                }
+            };
+
+            recognition.onerror = (event) => {
+                console.error("음성인식 오류:", event.error);
+            };
+
+            recognition.start();
+        }
+    </script>
+</body>
+
+</html>
