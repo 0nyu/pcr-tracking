@@ -76,6 +76,7 @@
         const savedStates = {};
         let currentWell = '';
         let gridData = {};
+        let recognition = null; // 전역으로 선언
         const wellSizes = {
             '96': { rows: 8, cols: 12 },
             '48': { rows: 6, cols: 8 }
@@ -197,6 +198,7 @@
         }
 
         function endWell() {
+            stopSpeechRecognition();
             savedStates[currentWell] = JSON.parse(JSON.stringify(gridData));
             alert("상태 저장 완료!");
         }
@@ -217,7 +219,7 @@
                 return;
             }
 
-            const recognition = new SpeechRecognition();
+            recognition = new SpeechRecognition();
             recognition.lang = 'ko-KR';
             recognition.continuous = true;
             recognition.interimResults = false;
@@ -237,7 +239,22 @@
                 console.error("음성인식 오류:", event.error);
             };
 
+            recognition.onend = () => {
+                // 사용자가 end 버튼을 누르지 않았다면 다시 시작
+                if (recognition) {
+                    recognition.start();
+                }
+            };
+
             recognition.start();
+        }
+
+        function stopSpeechRecognition() {
+            if (recognition) {
+                recognition.onend = null;
+                recognition.stop();
+                recognition = null;
+            }
         }
     </script>
 </body>
